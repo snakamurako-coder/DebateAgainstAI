@@ -226,6 +226,41 @@
       color: #212529;
     }
 
+    button.btn-loading {
+      position: relative;
+      pointer-events: none;
+      cursor: wait;
+      opacity: 0.88;
+    }
+
+    button.btn-loading .btn-loading-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+    }
+
+    button.btn-loading .btn-loading-label::before {
+      content: '';
+      display: inline-block;
+      width: 0.95em;
+      height: 0.95em;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: btnSpin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes btnSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    .auth-tab:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     .btn-warning:not(:disabled):hover {
       filter: brightness(0.95);
     }
@@ -1087,7 +1122,7 @@
     let currentUtterance = null; // ★ GC対策：グローバル変数で保持
 
     // GAS REST 呼び出し設定（APP_CONFIG で上書き可能、未設定時は以下を使用）
-    let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbz-XTHTkXod42zssNUVEE8caZwMN83ZDPN_knlz1D0gRA-aaWF9GWhHc2jtoYXA1KNr/exec';
+    let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbwnRyUjCDMljcZ8vljyU3HxkPMb3e8UwBxS41_cZaDt2znJCEAqOGxep1nkc02v-JTCQQ/exec';
 
     const AUTH_LOCK_KEY = 'auth_locked_until';
     const AUTH_FAIL_KEY = 'auth_fail_count';
@@ -1176,6 +1211,11 @@
     }
 
     async function runGASDiagnostic() {
+      if (busy) return;
+      await withButtonAction(el('btnDiagnose'), {
+        busyMessage: '接続診断中…',
+        buttonLabel: '診断中…'
+      }, async () => {
       const panel = document.getElementById('diagnosePanel');
       const log = document.getElementById('diagnoseLog');
       if (panel && log) {
@@ -1241,6 +1281,7 @@
         if (e.stack) diagLog(e.stack);
       }
       diagLog('=== 診断終了 ===');
+      });
     }
 
     async function gasAction(fnName, args) {
@@ -1423,6 +1464,7 @@
     }
 
     function switchAuthTab(tab) {
+      if (busy) return;
       const isLogin = tab === 'login';
       if (authTabBtnLogin) {
         authTabBtnLogin.classList.toggle('active', isLogin);
@@ -1515,17 +1557,22 @@
         if (msgEl) msgEl.textContent = 'メールアドレスを入力してください';
         return;
       }
-      if (msgEl) msgEl.textContent = '確認中…';
-      const stillLocked = await syncClientLockWithServer(email);
-      if (stillLocked) {
-        if (msgEl) msgEl.textContent = 'サーバー側ではまだロック中です。管理者にご確認ください。';
-        showLockScreen();
-        return;
-      }
-      if (msgEl) msgEl.textContent = 'ロックが解除されました。ログインできます。';
-      showLoginScreen();
-      const loginEmail = el('loginEmail');
-      if (loginEmail) loginEmail.value = email;
+      await withButtonAction(el('btnRecheckLock'), {
+        busyMessage: 'ロック状態を確認中…',
+        buttonLabel: '確認中…'
+      }, async () => {
+        if (msgEl) msgEl.textContent = '';
+        const stillLocked = await syncClientLockWithServer(email);
+        if (stillLocked) {
+          if (msgEl) msgEl.textContent = 'サーバー側ではまだロック中です。管理者にご確認ください。';
+          showLockScreen();
+          return;
+        }
+        if (msgEl) msgEl.textContent = 'ロックが解除されました。ログインできます。';
+        showLoginScreen();
+        const loginEmail = el('loginEmail');
+        if (loginEmail) loginEmail.value = email;
+      });
     }
 
     async function completeAuthSuccess(email) {
@@ -1578,23 +1625,27 @@
 
     async function onAuthLoginSubmit(e) {
       e.preventDefault();
+      if (busy) return;
       authLoginMsg.textContent = '';
       const email = (el('loginEmail').value || '').trim();
       const pin = (el('loginPin').value || '').trim();
       if (!/^\d{8}$/.test(pin)) { authLoginMsg.textContent = 'PINは8桁の数字で入力してください'; return; }
-      setBusy(true);
-      try {
-        await callGAS('auth_login', { email, pin });
-        await completeAuthSuccess(email.toLowerCase());
-      } catch (err) {
-        handleAuthError(err, authLoginMsg, email);
-      } finally {
-        setBusy(false);
-      }
+      await withButtonAction(el('btnAuthLogin'), {
+        busyMessage: 'ログイン中…',
+        buttonLabel: 'ログイン中…'
+      }, async () => {
+        try {
+          await callGAS('auth_login', { email, pin });
+          await completeAuthSuccess(email.toLowerCase());
+        } catch (err) {
+          handleAuthError(err, authLoginMsg, email);
+        }
+      });
     }
 
     async function onFirstLoginSubmit(e) {
       e.preventDefault();
+      if (busy) return;
       authFirstLoginMsg.textContent = '';
       const email = (el('regEmail').value || '').trim();
       const initialPassword = (el('regInitialPw').value || '').trim();
@@ -1602,17 +1653,19 @@
       const pinConfirm = (el('regPinConfirm').value || '').trim();
       if (!/^\d{8}$/.test(pin)) { authFirstLoginMsg.textContent = 'PINは8桁の数字で入力してください'; return; }
       if (pin !== pinConfirm) { authFirstLoginMsg.textContent = 'PIN（確認）が一致しません'; return; }
-      setBusy(true);
-      try {
-        const res = await callGAS('auth_verify_initial', { email, initialPassword });
-        const normalizedEmail = (res && res.email) || email.toLowerCase();
-        await callGAS('auth_register_pin', { email: normalizedEmail, pin });
-        await completeAuthSuccess(normalizedEmail);
-      } catch (err) {
-        handleAuthError(err, authFirstLoginMsg, email);
-      } finally {
-        setBusy(false);
-      }
+      await withButtonAction(el('btnAuthFirstLogin'), {
+        busyMessage: '登録中…',
+        buttonLabel: '登録中…'
+      }, async () => {
+        try {
+          const res = await callGAS('auth_verify_initial', { email, initialPassword });
+          const normalizedEmail = (res && res.email) || email.toLowerCase();
+          await callGAS('auth_register_pin', { email: normalizedEmail, pin });
+          await completeAuthSuccess(normalizedEmail);
+        } catch (err) {
+          handleAuthError(err, authFirstLoginMsg, email);
+        }
+      });
     }
 
     function logout() {
@@ -1708,12 +1761,73 @@
       btnSendPeriod.disabled = busy || chatLocked || authLocked || empty;
       btnSendQuestion.disabled = busy || chatLocked || authLocked || empty;
       btnRecToggle.disabled = busy || chatLocked || authLocked || speakingNow || !hasStarted;
+      const authInputs = ['loginEmail', 'loginPin', 'regEmail', 'regInitialPw', 'regPin', 'regPinConfirm', 'authLockRecheckEmail'];
+      authInputs.forEach(id => {
+        const inp = el(id);
+        if (inp) inp.disabled = busy && !isLoggedIn();
+      });
       updatePhaseButton();
     }
+    let _activeLoadingBtn = null;
+
+    function beginButtonLoading(btn, loadingLabel) {
+      if (!btn || btn.classList.contains('btn-loading')) return false;
+      btn.dataset.btnHtmlStore = btn.innerHTML;
+      btn.classList.add('btn-loading');
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      const label = loadingLabel || '処理中…';
+      btn.innerHTML = `<span class="btn-loading-label">${label}</span>`;
+      _activeLoadingBtn = btn;
+      return true;
+    }
+
+    function endButtonLoading(btn) {
+      const target = btn || _activeLoadingBtn;
+      if (!target) return;
+      target.classList.remove('btn-loading');
+      target.disabled = false;
+      target.removeAttribute('aria-busy');
+      if (target.dataset.btnHtmlStore !== undefined) {
+        target.innerHTML = target.dataset.btnHtmlStore;
+        delete target.dataset.btnHtmlStore;
+      }
+      if (_activeLoadingBtn === target) _activeLoadingBtn = null;
+    }
+
+    function setAuthTabsDisabled(disabled) {
+      if (authTabBtnLogin) authTabBtnLogin.disabled = !!disabled;
+      if (authTabBtnFirstLogin) authTabBtnFirstLogin.disabled = !!disabled;
+    }
+
+    async function withButtonAction(btn, options, fn) {
+      if (busy) return false;
+      const busyMessage = (options && options.busyMessage) || '処理中…';
+      const buttonLabel = (options && options.buttonLabel) || busyMessage;
+      setBusy(true, busyMessage);
+      setAuthTabsDisabled(true);
+      if (btn && !beginButtonLoading(btn, buttonLabel)) {
+        setBusy(false);
+        setAuthTabsDisabled(false);
+        return false;
+      }
+      try {
+        await fn();
+        return true;
+      } finally {
+        endButtonLoading(btn);
+        setBusy(false);
+        setAuthTabsDisabled(false);
+      }
+    }
+
     function setBusy(flag, message) {
       busy = !!flag;
       statusRun(busy ? (message || '処理中…') : '');
-      if (!busy) removeAiThinking();
+      if (!busy) {
+        removeAiThinking();
+        setAuthTabsDisabled(false);
+      }
       updateUI();
     }
 
@@ -1934,16 +2048,24 @@
 
     /* ========= 会話フェーズ ========= */
     function updatePhaseButton() { btnPhase.disabled = busy || !isLoggedIn() || configNotSet(); btnPhase.classList.remove('btn-danger', 'btn-warning', 'btn-success', 'btn-primary'); if (phase === 'start') { btnPhase.textContent = '英会話開始（＋初回の音声認識開始）'; btnPhase.classList.add('btn-danger'); } else if (phase === 'feedback') { btnPhase.textContent = '英会話を終了＆フィードバック'; btnPhase.classList.add('btn-warning'); } else if (phase === 'submit') { btnPhase.textContent = '提出（忘れずに）'; btnPhase.classList.add('btn-success'); } else { btnPhase.textContent = '提出完了'; btnPhase.classList.add('btn-primary'); btnPhase.disabled = true; } }
-    function onPhaseClick() { if (phase === 'start') return startConversationFlow(); if (phase === 'feedback') return doFeedbackFlow(); if (phase === 'submit') return onSubmit(); }
+    function onPhaseClick() {
+      if (busy) return;
+      if (phase === 'start') return startConversationFlow();
+      if (phase === 'feedback') return doFeedbackFlow();
+      if (phase === 'submit') return onSubmit();
+    }
     function startConversationFlow() {
+      if (busy) return;
       if (configNotSet()) { statusSubmit('GAS_URL を設定してください。', true); return; }
       if (!isLoggedIn()) { statusSubmit('先にログインしてください。', true); return; }
       if (!currentBook || !currentUnit || !currentRow) { statusSubmit('ブック・単元・英会話を選んでください。', true); return; } if (!userRoleSel.value) { statusSubmit('あなたの役割を選んでください。', true); return; }
       const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
       const sysMsg = `Conversation started.\nLevel: ${cefr.value}\nTheme: ${currentBook.name} / ${currentUnit} / ${currentRow.title}\nYour Role: ${effectiveUserRole}`;
       messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = true; firstUserSent = false; addMsg('system', sysMsg); selectorsFrozen = true;
+      beginButtonLoading(btnPhase, '開始中…');
       setBusy(true, 'AIが考え中…'); showAiThinking();
       google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
         setBusy(false);
         if (res) {
           // ★ AIの最初のセリフを履歴に追加
@@ -1954,13 +2076,15 @@
         }
         phase = 'feedback'; updatePhaseButton(); updateUI();
       })
-        .withFailureHandler(err => { setBusy(false); statusSubmit(err.message, true); })
+        .withFailureHandler(err => { endButtonLoading(btnPhase); setBusy(false); statusSubmit(err.message, true); })
         .startConversation(messages, cefr.value, currentRow, effectiveUserRole);
     }
     function doFeedbackFlow() {
+      if (busy) return;
       if (messages.filter(m => m.role === 'user').length === 0) { statusSubmit('フィードバックするには、最低1回は発話してください。', true); return; }
       revealAllAssistantTexts();
       const ok = window.confirm('本当に英会話を終了し、フィードバックを受け取りますか？\n（これ以降、会話は続けられません）'); if (!ok) return;
+      beginButtonLoading(btnPhase, '生成中…');
       setBusy(true, 'フィードバックを生成中…'); showAiThinking('フィードバックを生成中'); stopRecognition();
       const tip = (currentRow && currentRow.preFeedbackTip) || ''; if (tip && !preFBShown) { addMsg('system', 'フィードバック直前のヒント：\n' + tip); preFBShown = true; }
       const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
@@ -1971,8 +2095,17 @@
         bookName: currentBook ? currentBook.name : '',
         unitName: currentUnit || ''
       };
-      google.script.run.withSuccessHandler(res => { setBusy(false); returnedFB = res || ''; addMsg('system', returnedFB); statusSubmit('フィードバックを受け取りました。最後に「提出」を押してください。', false); phase = 'submit'; updatePhaseButton(); updateUI(); })
-        .withFailureHandler(err => { setBusy(false); statusSubmit(err.message, true); })
+      google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
+        setBusy(false);
+        returnedFB = res || '';
+        addMsg('system', returnedFB);
+        statusSubmit('フィードバックを受け取りました。最後に「提出」を押してください。', false);
+        phase = 'submit';
+        updatePhaseButton();
+        updateUI();
+      })
+        .withFailureHandler(err => { endButtonLoading(btnPhase); setBusy(false); statusSubmit(err.message, true); })
         .getFeedback(messages, cefr.value, currentRow, effectiveUserRole, extraMeta);
     }
 
@@ -1990,9 +2123,12 @@
 
       if (!firstUserSent) { firstUserSent = true; firstLineHint.textContent = ''; }
       const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const sendBtn = suffix === '?' ? btnSendQuestion : btnSendPeriod;
       messages.push({ role: 'user', content: text }); addMsg('user', text); userInput.value = '';
+      beginButtonLoading(sendBtn, '送信中…');
       setBusy(true, 'AIが考え中…'); showAiThinking(); updateUI(); scrollToBottomIfEnabled(); stopRecognition();
       google.script.run.withSuccessHandler(res => {
+        endButtonLoading(sendBtn);
         setBusy(false);
         const reply = res || '';
         if (reply) {
@@ -2002,7 +2138,7 @@
           startRecognition();
         }
       })
-        .withFailureHandler(err => { setBusy(false); statusSubmit(err.message, true); startRecognition(); })
+        .withFailureHandler(err => { endButtonLoading(sendBtn); setBusy(false); statusSubmit(err.message, true); startRecognition(); })
         .continueConversation(messages, cefr.value, currentRow, effectiveUserRole);
     }
 
@@ -2010,9 +2146,12 @@
     async function onSubmit() {
       if (busy || hasSubmitted || !returnedFB) { statusSubmit('提出できません。FBを先に取得してください。', true); return; }
       if (!isLoggedIn()) { statusSubmit('提出前にログインしてください。', true); return; }
-      const ok = window.confirm(`以下の情報で提出します。よろしいですか？\n\n本人情報： ${identBadge.textContent}\n課題： ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n\n（注意：提出は1回限りです）`); if (!ok) return; setBusy(true); hasSubmitted = true; statusSubmit('提出中…', false); const clipboardText = formatForClipboard(); stopRecognition();
+      const ok = window.confirm(`以下の情報で提出します。よろしいですか？\n\n本人情報： ${identBadge.textContent}\n課題： ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n\n（注意：提出は1回限りです）`); if (!ok) return;
+      beginButtonLoading(btnPhase, '提出中…');
+      setBusy(true, '提出中…'); hasSubmitted = true; statusSubmit('提出中…', false); const clipboardText = formatForClipboard(); stopRecognition();
       const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
       google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
         setBusy(false);
         statusSubmit('提出が完了しました： ' + res.fileName, false);
         tryShowClipboard(clipboardText);
@@ -2030,7 +2169,14 @@
         updatePhaseButton();
         updateUI();
       })
-        .withFailureHandler(err => { setBusy(false); hasSubmitted = false; statusSubmit('提出エラー：' + err.message, true); updatePhaseButton(); updateUI(); })
+        .withFailureHandler(err => {
+          endButtonLoading(btnPhase);
+          setBusy(false);
+          hasSubmitted = false;
+          statusSubmit('提出エラー：' + err.message, true);
+          updatePhaseButton();
+          updateUI();
+        })
         .submitTask(gIdentity, currentBook.name, currentUnit, currentRow, messages, returnedFB, cefr.value, effectiveUserRole);
     }
     function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = roleLockedToA ? 'B' : userRoleSel.value; const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
@@ -2039,6 +2185,7 @@
     /* ========= リスタート ========= */
     function restartSameSelection() { try { window.speechSynthesis.cancel(); } catch (_) { } stopRecognition(); messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = false; preFBShown = false; selectorsFrozen = false; firstUserSent = false; statusSubmit(''); phase = 'start'; updatePhaseButton(); updateFirstLineHintForRole(); updateUI(); statusRun(''); }
     async function refreshThemesOnly() {
+      if (busy) return;
       try { window.speechSynthesis.cancel(); } catch (_) { }
       stopRecognition();
       messages = []; chatDiv.innerHTML = '';
@@ -2051,16 +2198,19 @@
       if (footer) footer.classList.add('hidden');
 
       // ★ 強制再取得
-      setBusy(true);
+      beginButtonLoading(btnRefresh, '更新中…');
+      setBusy(true, 'テーマを更新中…');
       forceFetch = true;
       google.script.run
         .withSuccessHandler(booksRes => {
+          endButtonLoading(btnRefresh);
           updateBooks(booksRes || []);
           cefr.value = 'A2';
           setBusy(false);
           statusRun('');
         })
         .withFailureHandler(err => {
+          endButtonLoading(btnRefresh);
           setBusy(false);
           statusRun('ブック読み直しエラー：' + err.message);
           statusSubmit(err.message, true);

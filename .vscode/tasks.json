@@ -97,7 +97,7 @@
       {
         "label": "GAS: Open Exec WebApp (Current)",
         "type": "shell",
-        "command": "start https://script.google.com/macros/s/AKfycbwLGGQ80wABUSS0F7EncmL_elH_2N2m5JMogWrj0vU0QLXKq3DCgqknxIhlyHBIDjYpHA/exec",
+        "command": "start https://script.google.com/macros/s/AKfycbwnRyUjCDMljcZ8vljyU3HxkPMb3e8UwBxS41_cZaDt2znJCEAqOGxep1nkc02v-JTCQQ/exec",
         "presentation": { "reveal": "always", "panel": "shared" }
       },
 
@@ -127,7 +127,7 @@
       {
         "label": "GAS: OneTouch-E (Deploy & Open Exec)",
         "type": "shell",
-        "command": "powershell -Command \"clasp push; clasp version 'AutoVersion-OneTouch-E'; clasp deploy; start https://script.google.com/macros/s/AKfycbwLGGQ80wABUSS0F7EncmL_elH_2N2m5JMogWrj0vU0QLXKq3DCgqknxIhlyHBIDjYpHA/exec\"",
+        "command": "powershell -Command \"clasp push; clasp version 'AutoVersion-OneTouch-E'; clasp deploy; start https://script.google.com/macros/s/AKfycbwnRyUjCDMljcZ8vljyU3HxkPMb3e8UwBxS41_cZaDt2znJCEAqOGxep1nkc02v-JTCQQ/exec\"",
         "presentation": { "reveal": "always", "panel": "shared" }
       },
   
