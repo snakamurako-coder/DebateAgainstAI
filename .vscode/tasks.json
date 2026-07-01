@@ -92,6 +92,16 @@
       },
   
       // =====================================================================
+      // Exec WebApp（固定 URL: @1 コピーしたばかり）
+      // =====================================================================
+      {
+        "label": "GAS: Open Exec WebApp (Current)",
+        "type": "shell",
+        "command": "start https://script.google.com/macros/s/AKfycbwLGGQ80wABUSS0F7EncmL_elH_2N2m5JMogWrj0vU0QLXKq3DCgqknxIhlyHBIDjYpHA/exec",
+        "presentation": { "reveal": "always", "panel": "shared" }
+      },
+
+      // =====================================================================
       // Exec WebApp 自動取得 → 開く
       // =====================================================================
       {
@@ -117,7 +127,7 @@
       {
         "label": "GAS: OneTouch-E (Deploy & Open Exec)",
         "type": "shell",
-        "command": "powershell -Command \"clasp push; clasp version 'AutoVersion-OneTouch-E'; clasp deploy; $id = clasp deployments | Select-String -NotMatch 'dev' | Select-Object -Last 1 | ForEach-Object { ($_ -split '\\s+')[0] }; start https://script.google.com/macros/s/$id/exec\"",
+        "command": "powershell -Command \"clasp push; clasp version 'AutoVersion-OneTouch-E'; clasp deploy; start https://script.google.com/macros/s/AKfycbwLGGQ80wABUSS0F7EncmL_elH_2N2m5JMogWrj0vU0QLXKq3DCgqknxIhlyHBIDjYpHA/exec\"",
         "presentation": { "reveal": "always", "panel": "shared" }
       },
   
